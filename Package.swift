@@ -17,7 +17,10 @@ let package = Package(
         .executableTarget(
             name: "WarpStatus",
             dependencies: [],
-            path: "Sources"
+            path: "Sources",
+            resources: [
+                .process("Resources")
+            ]
         ),
     ]
 )

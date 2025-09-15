@@ -46,7 +46,11 @@ class MenuBarController: NSObject, ObservableObject {
         if let data = data {
             // Create an attributed string with icon and text
             let attachment = NSTextAttachment()
-            if let icon = NSImage(systemSymbolName: "terminal.fill", accessibilityDescription: nil) {
+            if let icon = NSImage(named: "AppIcon") {
+                icon.size = NSSize(width: 12, height: 12)
+                attachment.image = icon
+            } else if let icon = NSImage(systemSymbolName: "terminal.fill", accessibilityDescription: nil) {
+                // Fallback to system icon if custom icon is not available
                 icon.size = NSSize(width: 12, height: 12)
                 attachment.image = icon
             }

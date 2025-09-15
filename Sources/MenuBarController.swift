@@ -46,9 +46,17 @@ class MenuBarController: NSObject, ObservableObject {
         if let data = data {
             // Create an attributed string with icon and text
             let attachment = NSTextAttachment()
-            if let icon = NSImage(systemSymbolName: "terminal.fill", accessibilityDescription: nil) {
-                icon.size = NSSize(width: 12, height: 12)
+            if let resourcePath = Bundle.module.path(forResource: "menubar_icon", ofType: "png"),
+               let icon = NSImage(contentsOfFile: resourcePath) {
+                icon.size = NSSize(width: 16, height: 16)
                 attachment.image = icon
+                // Center align icon with text
+                attachment.bounds = CGRect(x: 0, y: -4, width: 16, height: 16)
+            } else if let icon = NSImage(systemSymbolName: "terminal.fill", accessibilityDescription: nil) {
+                // Fallback to system icon if custom icon is not available
+                icon.size = NSSize(width: 16, height: 16)
+                attachment.image = icon
+                attachment.bounds = CGRect(x: 0, y: -4, width: 16, height: 16)
             }
             
             let attributedString = NSMutableAttributedString(attachment: attachment)
@@ -92,28 +100,6 @@ class MenuBarController: NSObject, ObservableObject {
         let menu = NSMenu()
         
         if let data = warpUsageService.usageData {
-            // Usage information section
-            let usageItem = NSMenuItem()
-            usageItem.title = "Usage: \(data.displayText)"
-            usageItem.isEnabled = false
-            menu.addItem(usageItem)
-            
-            // Subscription type
-            let subscriptionItem = NSMenuItem()
-            subscriptionItem.title = "Plan: \(data.subscriptionDisplayName)"
-            subscriptionItem.isEnabled = false
-            menu.addItem(subscriptionItem)
-            
-            // Progress bar visualization
-            if !data.isUnlimited {
-                let progressItem = NSMenuItem()
-                let percentage = Int(data.usagePercentage * 100)
-                let progressBar = createProgressBar(percentage: data.usagePercentage)
-                progressItem.title = "\(progressBar) \(percentage)%"
-                progressItem.isEnabled = false
-                menu.addItem(progressItem)
-            }
-            
             // Next refresh time
             let formatter = DateFormatter()
             formatter.dateFormat = "MMM dd, yyyy 'at' h:mm a"
@@ -124,45 +110,7 @@ class MenuBarController: NSObject, ObservableObject {
             menu.addItem(refreshItem)
             
             menu.addItem(NSMenuItem.separator())
-            
-            // Real-time update indicator
-            let realtimeItem = NSMenuItem()
-            realtimeItem.title = "🔄 Live Updates (1s refresh)"
-            realtimeItem.isEnabled = false
-            menu.addItem(realtimeItem)
-            
-            // Last update time
-            if let lastUpdate = warpUsageService.lastUpdateTime {
-                let timeFormatter = DateFormatter()
-                timeFormatter.timeStyle = .medium
-                let lastUpdateItem = NSMenuItem()
-                lastUpdateItem.title = "Last updated: \(timeFormatter.string(from: lastUpdate))"
-                lastUpdateItem.isEnabled = false
-                menu.addItem(lastUpdateItem)
-            }
-            
-        } else if warpUsageService.isLoading {
-            let loadingItem = NSMenuItem()
-            loadingItem.title = "Loading..."
-            loadingItem.isEnabled = false
-            menu.addItem(loadingItem)
-        } else if let error = warpUsageService.lastError {
-            let errorItem = NSMenuItem()
-            errorItem.title = "Error: \(error)"
-            errorItem.isEnabled = false
-            menu.addItem(errorItem)
         }
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Refresh action
-        let refreshItem = NSMenuItem()
-        refreshItem.title = "Refresh"
-        refreshItem.action = #selector(refreshData)
-        refreshItem.target = self
-        menu.addItem(refreshItem)
-        
-        menu.addItem(NSMenuItem.separator())
         
         // Quit action
         let quitItem = NSMenuItem()
