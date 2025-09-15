@@ -34,8 +34,8 @@ class MenuBarController: NSObject, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     private func setupTimer() {
-        // Refresh every 5 minutes
-        timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        // Refresh every second for real-time updates
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.warpUsageService.loadUsageData()
         }
     }
@@ -81,6 +81,8 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     @objc private func statusBarButtonClicked() {
+        // Force refresh to ensure menu shows latest data
+        warpUsageService.loadUsageData(force: true)
         let menu = createMenu()
         statusBarItem.menu = menu
         statusBarItem.button?.performClick(nil)
@@ -114,12 +116,30 @@ class MenuBarController: NSObject, ObservableObject {
             
             // Next refresh time
             let formatter = DateFormatter()
-            formatter.dateStyle = .short
-            formatter.timeStyle = .short
+            formatter.dateFormat = "MMM dd, yyyy 'at' h:mm a"
+            formatter.locale = Locale(identifier: "en_US")
             let refreshItem = NSMenuItem()
             refreshItem.title = "Resets: \(formatter.string(from: data.nextRefreshTime))"
             refreshItem.isEnabled = false
             menu.addItem(refreshItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            // Real-time update indicator
+            let realtimeItem = NSMenuItem()
+            realtimeItem.title = "🔄 Live Updates (1s refresh)"
+            realtimeItem.isEnabled = false
+            menu.addItem(realtimeItem)
+            
+            // Last update time
+            if let lastUpdate = warpUsageService.lastUpdateTime {
+                let timeFormatter = DateFormatter()
+                timeFormatter.timeStyle = .medium
+                let lastUpdateItem = NSMenuItem()
+                lastUpdateItem.title = "Last updated: \(timeFormatter.string(from: lastUpdate))"
+                lastUpdateItem.isEnabled = false
+                menu.addItem(lastUpdateItem)
+            }
             
         } else if warpUsageService.isLoading {
             let loadingItem = NSMenuItem()
@@ -163,7 +183,7 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     @objc private func refreshData() {
-        warpUsageService.loadUsageData()
+        warpUsageService.loadUsageData(force: true)
     }
     
     @objc private func quitApp() {

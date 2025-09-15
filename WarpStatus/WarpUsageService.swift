@@ -27,6 +27,8 @@ struct WarpUsageData {
             return "Pro Plan"
         } else if subscriptionType == "Standard" {
             return "Standard Plan"
+        } else if subscriptionType == "Basic" {
+            return "Basic Plan"
         } else {
             return "Free Plan"
         }
@@ -37,14 +39,27 @@ class WarpUsageService: ObservableObject {
     @Published var usageData: WarpUsageData?
     @Published var isLoading = false
     @Published var lastError: String?
+    @Published var lastUpdateTime: Date?
     
     private let plistPath = "\(NSHomeDirectory())/Library/Preferences/dev.warp.Warp-Stable.plist"
+    private var lastModificationDate: Date?
     
     init() {
         loadUsageData()
     }
     
     func loadUsageData() {
+        loadUsageData(force: false)
+    }
+    
+    func loadUsageData(force: Bool = false) {
+        // Check if file has been modified before parsing (unless forced)
+        if !force {
+            guard hasFileChanged() else {
+                return // No changes, skip update
+            }
+        }
+        
         isLoading = true
         lastError = nil
         
@@ -54,6 +69,11 @@ class WarpUsageService: ObservableObject {
                 DispatchQueue.main.async {
                     self?.isLoading = false
                     self?.usageData = data
+                    self?.lastUpdateTime = Date()
+                    if force {
+                        // Update modification date to reflect forced refresh
+                        _ = self?.hasFileChanged()
+                    }
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -62,6 +82,20 @@ class WarpUsageService: ObservableObject {
                 }
             }
         }
+    }
+    
+    private func hasFileChanged() -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: plistPath),
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            return true // If we can't get modification date, assume it changed
+        }
+        
+        if lastModificationDate == nil || modificationDate > lastModificationDate! {
+            lastModificationDate = modificationDate
+            return true
+        }
+        
+        return false
     }
     
     private func parseWarpPlist() throws -> WarpUsageData {
@@ -88,21 +122,12 @@ class WarpUsageService: ObservableObject {
         var refreshDate = Date()
         if let refreshTimeString = limitInfo["next_refresh_time"] as? String {
             let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             refreshDate = formatter.date(from: refreshTimeString) ?? Date()
         }
         
         // Determine subscription type based on limits and features
-        let subscriptionType: String
-        if isUnlimited {
-            subscriptionType = "Pro"
-        } else if requestsLimit >= 2500 {
-            // Check for premium model access to distinguish between plans
-            subscriptionType = "Pro"
-        } else if requestsLimit > 150 {
-            subscriptionType = "Standard"
-        } else {
-            subscriptionType = "Free"
-        }
+        let subscriptionType = determineSubscriptionType(plist: plist, requestsLimit: requestsLimit, isUnlimited: isUnlimited)
         
         return WarpUsageData(
             requestsUsed: requestsUsed,
@@ -111,6 +136,35 @@ class WarpUsageService: ObservableObject {
             isUnlimited: isUnlimited,
             subscriptionType: subscriptionType
         )
+    }
+    
+    private func determineSubscriptionType(plist: NSDictionary, requestsLimit: Int, isUnlimited: Bool) -> String {
+        if isUnlimited {
+            return "Pro"
+        }
+        
+        // Check for high voice limits (Pro plan indicator)
+        if let aiRequestLimitString = plist["AIRequestLimitInfo"] as? String,
+           let aiRequestData = aiRequestLimitString.data(using: .utf8),
+           let aiRequestInfo = try? JSONSerialization.jsonObject(with: aiRequestData) as? [String: Any] {
+            
+            let voiceRequestLimit = aiRequestInfo["voice_request_limit"] as? Int ?? 0
+            let maxCodebaseIndices = aiRequestInfo["max_codebase_indices"] as? Int ?? 0
+            
+            // Pro plan has high voice limits and more codebase indices
+            if voiceRequestLimit >= 999999 && maxCodebaseIndices >= 40 && requestsLimit >= 2500 {
+                return "Pro"
+            }
+        }
+        
+        // Standard plan detection
+        if requestsLimit >= 2500 {
+            return "Standard"
+        } else if requestsLimit > 150 {
+            return "Basic"
+        } else {
+            return "Free"
+        }
     }
 }
 

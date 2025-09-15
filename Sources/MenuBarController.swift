@@ -81,6 +81,8 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     @objc private func statusBarButtonClicked() {
+        // Force refresh to ensure menu shows latest data
+        warpUsageService.loadUsageData(force: true)
         let menu = createMenu()
         statusBarItem.menu = menu
         statusBarItem.button?.performClick(nil)
@@ -114,8 +116,8 @@ class MenuBarController: NSObject, ObservableObject {
             
             // Next refresh time
             let formatter = DateFormatter()
-            formatter.dateStyle = .short
-            formatter.timeStyle = .short
+            formatter.dateFormat = "MMM dd, yyyy 'at' h:mm a"
+            formatter.locale = Locale(identifier: "en_US")
             let refreshItem = NSMenuItem()
             refreshItem.title = "Resets: \(formatter.string(from: data.nextRefreshTime))"
             refreshItem.isEnabled = false
@@ -181,7 +183,7 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     @objc private func refreshData() {
-        warpUsageService.loadUsageData()
+        warpUsageService.loadUsageData(force: true)
     }
     
     @objc private func quitApp() {

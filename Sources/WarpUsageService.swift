@@ -49,9 +49,15 @@ class WarpUsageService: ObservableObject {
     }
     
     func loadUsageData() {
-        // Check if file has been modified before parsing
-        guard hasFileChanged() else {
-            return // No changes, skip update
+        loadUsageData(force: false)
+    }
+    
+    func loadUsageData(force: Bool = false) {
+        // Check if file has been modified before parsing (unless forced)
+        if !force {
+            guard hasFileChanged() else {
+                return // No changes, skip update
+            }
         }
         
         isLoading = true
@@ -64,6 +70,10 @@ class WarpUsageService: ObservableObject {
                     self?.isLoading = false
                     self?.usageData = data
                     self?.lastUpdateTime = Date()
+                    if force {
+                        // Update modification date to reflect forced refresh
+                        _ = self?.hasFileChanged()
+                    }
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -112,6 +122,7 @@ class WarpUsageService: ObservableObject {
         var refreshDate = Date()
         if let refreshTimeString = limitInfo["next_refresh_time"] as? String {
             let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             refreshDate = formatter.date(from: refreshTimeString) ?? Date()
         }
         
