@@ -14,10 +14,9 @@ struct WarpUsageData {
     
     var displayText: String {
         if isUnlimited {
-            return "∞/∞ (Unlimited)"
+            return "∞/∞"
         } else {
-            let percentage = Int(usagePercentage * 100)
-            return "\(requestsUsed)/\(requestsLimit) (\(percentage)%)"
+            return "\(requestsUsed)/\(requestsLimit)"
         }
     }
     

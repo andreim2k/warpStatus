@@ -100,14 +100,42 @@ class MenuBarController: NSObject, ObservableObject {
         let menu = NSMenu()
         
         if let data = warpUsageService.usageData {
-            // Next refresh time
+            // Usage information
+            let usageItem = NSMenuItem()
+            if data.isUnlimited {
+                usageItem.title = "Usage: ∞/∞"
+            } else {
+                usageItem.title = "Usage: \(data.requestsUsed)/\(data.requestsLimit)"
+            }
+            usageItem.isEnabled = false
+            menu.addItem(usageItem)
+            
+            // Plan information
+            let planItem = NSMenuItem()
+            planItem.title = "Plan: \(data.subscriptionDisplayName)"
+            planItem.isEnabled = false
+            menu.addItem(planItem)
+            
+            // Reset time
             let formatter = DateFormatter()
             formatter.dateFormat = "MMM dd, yyyy 'at' h:mm a"
             formatter.locale = Locale(identifier: "en_US")
-            let refreshItem = NSMenuItem()
-            refreshItem.title = "Resets: \(formatter.string(from: data.nextRefreshTime))"
-            refreshItem.isEnabled = false
-            menu.addItem(refreshItem)
+            let resetItem = NSMenuItem()
+            resetItem.title = "Resets: \(formatter.string(from: data.nextRefreshTime))"
+            resetItem.isEnabled = false
+            menu.addItem(resetItem)
+            
+            menu.addItem(NSMenuItem.separator())
+        } else {
+            // Error state
+            let errorItem = NSMenuItem()
+            if let error = warpUsageService.lastError {
+                errorItem.title = "Error: \(error)"
+            } else {
+                errorItem.title = "Loading..."
+            }
+            errorItem.isEnabled = false
+            menu.addItem(errorItem)
             
             menu.addItem(NSMenuItem.separator())
         }
@@ -130,9 +158,6 @@ class MenuBarController: NSObject, ObservableObject {
         return "[\(filled)\(empty)]"
     }
     
-    @objc private func refreshData() {
-        warpUsageService.loadUsageData(force: true)
-    }
     
     @objc private func quitApp() {
         NSApplication.shared.terminate(nil)
