@@ -1,132 +1,141 @@
 import SwiftUI
+import Combine
 
 struct ContentView: View {
-    @StateObject private var warpUsageService = WarpUsageService()
-    
+    @ObservedObject var warpUsageService: WarpUsageService
+    var onQuit: () -> Void
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
+            headerView
+
+            if let data = warpUsageService.usageData {
+                statsView(for: data)
+            } else if let error = warpUsageService.lastError {
+                errorView(error)
+            } else {
+                loadingView
+            }
+
+            footerView
+        }
+        .padding(15)
+        .frame(width: 320)
+        .onAppear {
+            warpUsageService.loadUsageData(force: true)
+        }
+    }
+
+    private var headerView: some View {
+        HStack {
+            Text("Warp AI Usage")
+                .font(.headline)
+                .fontWeight(.bold)
+            Spacer()
+            if warpUsageService.isLoading {
+                ProgressView()
+                    .scaleEffect(0.7)
+            }
+        }
+    }
+
+    private func statsView(for data: WarpUsageData) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Image(systemName: "terminal.fill")
-                    .foregroundColor(.blue)
-                    .font(.largeTitle)
-                
-                VStack(alignment: .leading) {
-                    Text("Warp Status")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("Monitor your Warp AI usage")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                Text("Plan:")
+                Spacer()
+                Text(data.subscriptionDisplayName)
+                    .fontWeight(.semibold)
+            }
+            
+            HStack {
+                Text("Usage:")
+                Spacer()
+                Text(data.displayText)
+                    .fontWeight(.semibold)
+            }
+            
+            if !data.isUnlimited {
+                ProgressView(value: data.usagePercentage)
+                    .progressViewStyle(LinearProgressViewStyle())
+                    .accentColor(colorForPercentage(data.usagePercentage))
+            }
+            
+            Divider()
+            
+            HStack {
+                Text("Resets on:")
+                Spacer()
+                Text(data.nextRefreshTime, formatter: dateFormatter)
+                    .fontWeight(.semibold)
+            }
+        }
+    }
+
+    private func errorView(_ error: String) -> some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+            Text(error)
+                .font(.callout)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var loadingView: some View {
+        HStack {
+            ProgressView()
+                .scaleEffect(0.7)
+            Text("Loading...")
+                .font(.callout)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var footerView: some View {
+        VStack(spacing: 10) {
+            Divider()
+
+            if let lastUpdateTime = warpUsageService.lastUpdateTime {
+                Text("Last updated: \(lastUpdateTime, formatter: timeFormatter)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack {
+                Button("Refresh") {
+                    warpUsageService.loadUsageData(force: true)
                 }
                 
                 Spacer()
+
+                Button("Quit") {
+                    self.onQuit()
+                }
             }
-            
-            Divider()
-            
-            if let data = warpUsageService.usageData {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Current Usage:")
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text(data.displayText)
-                            .fontWeight(.semibold)
-                            .foregroundColor(data.isUnlimited ? .green : 
-                                           data.usagePercentage < 0.7 ? .green :
-                                           data.usagePercentage < 0.9 ? .orange : .red)
-                    }
-                    
-                    HStack {
-                        Text("Plan:")
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text(data.subscriptionDisplayName)
-                            .fontWeight(.semibold)
-                    }
-                    
-                    if !data.isUnlimited {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("Progress:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(Int(data.usagePercentage * 100))%")
-                                    .fontWeight(.semibold)
-                            }
-                            
-                            ProgressView(value: data.usagePercentage)
-                                .progressViewStyle(LinearProgressViewStyle())
-                                .accentColor(data.usagePercentage < 0.7 ? .green :
-                                           data.usagePercentage < 0.9 ? .orange : .red)
-                        }
-                    }
-                    
-                    HStack {
-                        Text("Resets:")
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text(data.nextRefreshTime, style: .date)
-                            .fontWeight(.semibold)
-                    }
-                }
-                .padding()
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(8)
-                
-            } else if warpUsageService.isLoading {
-                HStack {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                    Text("Loading usage data...")
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-                
-            } else if let error = warpUsageService.lastError {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle")
-                            .foregroundColor(.orange)
-                        Text("Error")
-                            .fontWeight(.medium)
-                    }
-                    Text(error)
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                    
-                    Button("Retry") {
-                        warpUsageService.loadUsageData()
-                    }
-                    .buttonStyle(BorderedProminentButtonStyle())
-                }
-                .padding()
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(8)
-            }
-            
-            Divider()
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("About")
-                    .font(.headline)
-                
-                Text("This app monitors your Warp terminal AI usage by reading from Warp's preferences. The status is displayed in your menu bar and updates automatically every 5 minutes.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Button("Refresh Now") {
-                    warpUsageService.loadUsageData()
-                }
-                .buttonStyle(BorderedButtonStyle())
-            }
-            
-            Spacer()
         }
-        .padding(20)
-        .frame(width: 400, height: 350)
-        .onAppear {
-            warpUsageService.loadUsageData()
+    }
+
+    private func colorForPercentage(_ percentage: Double) -> Color {
+        if percentage > 0.9 {
+            return .red
+        } else if percentage > 0.7 {
+            return .orange
+        } else {
+            return .green
         }
+    }
+
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter
+    }
+
+    private var timeFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .medium
+        return formatter
     }
 }
