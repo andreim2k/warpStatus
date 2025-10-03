@@ -4,13 +4,34 @@ import Combine
 
 class MenuBarController: NSObject, ObservableObject {
     private var statusBarItem: NSStatusItem!
+    private var popover: NSPopover!
     private let warpUsageService = WarpUsageService()
-    private var timer: Timer?
-    
+    private var cancellables = Set<AnyCancellable>()
+
     override init() {
         super.init()
+
+        setupPopover()
         setupMenuBar()
-        setupTimer()
+
+        // Listen for usage data updates
+        warpUsageService.$usageData
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] data in
+            self?.updateStatusBarButton(with: data)
+        }
+        .store(in: &cancellables)
+    }
+
+    private func setupPopover() {
+        let contentView = ContentView(warpUsageService: warpUsageService, onQuit: {
+            NSApplication.shared.terminate(nil)
+        })
+
+        popover = NSPopover()
+        popover.contentSize = NSSize(width: 320, height: 240)
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(rootView: contentView)
     }
     
     private func setupMenuBar() {
@@ -18,25 +39,8 @@ class MenuBarController: NSObject, ObservableObject {
         
         if let button = statusBarItem.button {
             button.title = "Loading..."
-            button.action = #selector(statusBarButtonClicked)
+            button.action = #selector(togglePopover)
             button.target = self
-        }
-        
-        // Listen for usage data updates
-        warpUsageService.$usageData.sink { [weak self] data in
-            DispatchQueue.main.async {
-                self?.updateStatusBarButton(with: data)
-            }
-        }
-        .store(in: &cancellables)
-    }
-    
-    private var cancellables = Set<AnyCancellable>()
-    
-    private func setupTimer() {
-        // Refresh every second for real-time updates
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.warpUsageService.loadUsageData()
         }
     }
     
@@ -44,16 +48,13 @@ class MenuBarController: NSObject, ObservableObject {
         guard let button = statusBarItem.button else { return }
         
         if let data = data {
-            // Create an attributed string with icon and text
             let attachment = NSTextAttachment()
             if let resourcePath = Bundle.module.path(forResource: "menubar_icon", ofType: "png"),
                let icon = NSImage(contentsOfFile: resourcePath) {
                 icon.size = NSSize(width: 16, height: 16)
                 attachment.image = icon
-                // Center align icon with text
                 attachment.bounds = CGRect(x: 0, y: -4, width: 16, height: 16)
             } else if let icon = NSImage(systemSymbolName: "terminal.fill", accessibilityDescription: nil) {
-                // Fallback to system icon if custom icon is not available
                 icon.size = NSSize(width: 16, height: 16)
                 attachment.image = icon
                 attachment.bounds = CGRect(x: 0, y: -4, width: 16, height: 16)
@@ -62,10 +63,8 @@ class MenuBarController: NSObject, ObservableObject {
             let attributedString = NSMutableAttributedString(attachment: attachment)
             attributedString.append(NSAttributedString(string: " \(data.displayText)"))
             
-            // Apply styling
             attributedString.addAttribute(.font, value: NSFont.systemFont(ofSize: 12), range: NSRange(location: 0, length: attributedString.length))
             
-            // Color code based on usage percentage
             let color: NSColor
             if data.isUnlimited {
                 color = .systemGreen
@@ -88,83 +87,15 @@ class MenuBarController: NSObject, ObservableObject {
         }
     }
     
-    @objc private func statusBarButtonClicked() {
-        // Force refresh to ensure menu shows latest data
-        warpUsageService.loadUsageData(force: true)
-        let menu = createMenu()
-        statusBarItem.menu = menu
-        statusBarItem.button?.performClick(nil)
-    }
-    
-    private func createMenu() -> NSMenu {
-        let menu = NSMenu()
-        
-        if let data = warpUsageService.usageData {
-            // Usage information
-            let usageItem = NSMenuItem()
-            if data.isUnlimited {
-                usageItem.title = "Usage: ∞/∞"
-            } else {
-                usageItem.title = "Usage: \(data.requestsUsed)/\(data.requestsLimit)"
-            }
-            usageItem.isEnabled = false
-            menu.addItem(usageItem)
-            
-            // Plan information
-            let planItem = NSMenuItem()
-            planItem.title = "Plan: \(data.subscriptionDisplayName)"
-            planItem.isEnabled = false
-            menu.addItem(planItem)
-            
-            // Reset time
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM dd, yyyy 'at' h:mm a"
-            formatter.locale = Locale(identifier: "en_US")
-            let resetItem = NSMenuItem()
-            resetItem.title = "Resets: \(formatter.string(from: data.nextRefreshTime))"
-            resetItem.isEnabled = false
-            menu.addItem(resetItem)
-            
-            menu.addItem(NSMenuItem.separator())
+    @objc private func togglePopover() {
+        if popover.isShown {
+            popover.performClose(nil)
         } else {
-            // Error state
-            let errorItem = NSMenuItem()
-            if let error = warpUsageService.lastError {
-                errorItem.title = "Error: \(error)"
-            } else {
-                errorItem.title = "Loading..."
+            if let button = statusBarItem.button {
+                warpUsageService.loadUsageData(force: true)
+                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                popover.contentViewController?.view.window?.becomeKey()
             }
-            errorItem.isEnabled = false
-            menu.addItem(errorItem)
-            
-            menu.addItem(NSMenuItem.separator())
         }
-        
-        // Quit action
-        let quitItem = NSMenuItem()
-        quitItem.title = "Quit Warp Status"
-        quitItem.action = #selector(quitApp)
-        quitItem.target = self
-        menu.addItem(quitItem)
-        
-        return menu
-    }
-    
-    private func createProgressBar(percentage: Double) -> String {
-        let barLength = 10
-        let filledLength = Int(percentage * Double(barLength))
-        let filled = String(repeating: "█", count: filledLength)
-        let empty = String(repeating: "░", count: barLength - filledLength)
-        return "[\(filled)\(empty)]"
-    }
-    
-    
-    @objc private func quitApp() {
-        NSApplication.shared.terminate(nil)
-    }
-    
-    deinit {
-        timer?.invalidate()
     }
 }
-

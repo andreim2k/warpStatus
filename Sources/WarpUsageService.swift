@@ -41,27 +41,25 @@ class WarpUsageService: ObservableObject {
     @Published var lastError: String?
     @Published var lastUpdateTime: Date?
     
-    private let plistPath = "\(NSHomeDirectory())/Library/Preferences/dev.warp.Warp-Stable.plist"
-    private var lastModificationDate: Date?
-    
+    private var plistPath: String?
+    private var fileMonitor: DispatchSourceFileSystemObject?
+
     init() {
-        loadUsageData()
+        self.plistPath = findWarpPlistPath()
+        if self.plistPath == nil {
+            self.lastError = "Warp preferences file not found. Please ensure Warp is installed."
+        }
+        loadUsageData(force: true)
+        setupFileMonitor()
     }
-    
-    func loadUsageData() {
-        loadUsageData(force: false)
+
+    deinit {
+        fileMonitor?.cancel()
     }
     
     func loadUsageData(force: Bool = false) {
-        // Check if file has been modified before parsing (unless forced)
-        if !force {
-            guard hasFileChanged() else {
-                return // No changes, skip update
-            }
-        }
-        
         isLoading = true
-        lastError = nil
+        // Don't reset error immediately, so the UI can show it until loading is complete
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
@@ -70,10 +68,7 @@ class WarpUsageService: ObservableObject {
                     self?.isLoading = false
                     self?.usageData = data
                     self?.lastUpdateTime = Date()
-                    if force {
-                        // Update modification date to reflect forced refresh
-                        _ = self?.hasFileChanged()
-                    }
+                    self?.lastError = nil // Clear error on success
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -84,22 +79,56 @@ class WarpUsageService: ObservableObject {
         }
     }
     
-    private func hasFileChanged() -> Bool {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: plistPath),
-              let modificationDate = attributes[.modificationDate] as? Date else {
-            return true // If we can't get modification date, assume it changed
+    private func findWarpPlistPath() -> String? {
+        let fileManager = FileManager.default
+        let preferencesDir = "\(NSHomeDirectory())/Library/Preferences/"
+
+        // Potential plist file names
+        let plistFileNames = [
+            "dev.warp.Warp-Stable.plist",
+            "dev.warp.Warp-Beta.plist",
+            "dev.warp.Warp-Nightly.plist",
+            "dev.warp.Warp.plist"
+        ]
+
+        for fileName in plistFileNames {
+            let fullPath = preferencesDir + fileName
+            if fileManager.fileExists(atPath: fullPath) {
+                return fullPath
+            }
+        }
+
+        return nil
+    }
+
+    private func setupFileMonitor() {
+        guard let path = plistPath else { return }
+
+        let fileURL = URL(fileURLWithPath: path)
+        // O_EVTONLY is a Mach-specific flag that returns a file descriptor suitable for kqueue-based event notifications
+        let fileDescriptor = open(fileURL.path, O_EVTONLY)
+
+        guard fileDescriptor != -1 else {
+            lastError = "Unable to monitor Warp preferences file for changes."
+            return
+        }
+
+        fileMonitor = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fileDescriptor, eventMask: .write, queue: .main)
+
+        fileMonitor?.setEventHandler { [weak self] in
+            // When a write event is detected, reload the data
+            self?.loadUsageData(force: true)
         }
         
-        if lastModificationDate == nil || modificationDate > lastModificationDate! {
-            lastModificationDate = modificationDate
-            return true
+        fileMonitor?.setCancelHandler {
+            close(fileDescriptor)
         }
         
-        return false
+        fileMonitor?.resume()
     }
     
     private func parseWarpPlist() throws -> WarpUsageData {
-        guard let plist = NSDictionary(contentsOfFile: plistPath) else {
+        guard let plistPath = plistPath, let plist = NSDictionary(contentsOfFile: plistPath) else {
             throw WarpError.plistNotFound
         }
         
@@ -175,9 +204,9 @@ enum WarpError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .plistNotFound:
-            return "Warp preferences file not found"
+            return "Warp preferences file not found. Ensure Warp is installed and has been run at least once."
         case .invalidPlistFormat:
-            return "Unable to parse Warp usage data"
+            return "Failed to parse Warp usage data. The format may have changed in a recent Warp update."
         }
     }
 }
