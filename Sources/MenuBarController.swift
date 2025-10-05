@@ -48,14 +48,13 @@ class MenuBarController: NSObject, ObservableObject {
         guard let button = statusBarItem.button else { return }
         
         if let data = data {
+            // Create an attributed string with theme-adaptive SF Symbol icon and text
             let attachment = NSTextAttachment()
-            if let resourcePath = Bundle.module.path(forResource: "menubar_icon", ofType: "png"),
-               let icon = NSImage(contentsOfFile: resourcePath) {
+            // Use only SF Symbol for clean black/white appearance
+            if let icon = NSImage(systemSymbolName: "terminal", accessibilityDescription: nil) {
+                // Clean outline terminal icon - professional macOS style
                 icon.size = NSSize(width: 16, height: 16)
-                attachment.image = icon
-                attachment.bounds = CGRect(x: 0, y: -4, width: 16, height: 16)
-            } else if let icon = NSImage(systemSymbolName: "terminal.fill", accessibilityDescription: nil) {
-                icon.size = NSSize(width: 16, height: 16)
+                icon.isTemplate = true  // Enable template rendering for theme adaptation
                 attachment.image = icon
                 attachment.bounds = CGRect(x: 0, y: -4, width: 16, height: 16)
             }
@@ -63,23 +62,13 @@ class MenuBarController: NSObject, ObservableObject {
             let attributedString = NSMutableAttributedString(attachment: attachment)
             attributedString.append(NSAttributedString(string: " \(data.displayText)"))
             
-            attributedString.addAttribute(.font, value: NSFont.systemFont(ofSize: 12), range: NSRange(location: 0, length: attributedString.length))
+            // Apply SF Mono font - same as SystemMonitor
+            let monoFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
+            attributedString.addAttribute(.font, value: monoFont, range: NSRange(location: 0, length: attributedString.length))
             
-            let color: NSColor
-            if data.isUnlimited {
-                color = .systemGreen
-            } else {
-                let percentage = data.usagePercentage
-                if percentage < 0.7 {
-                    color = .systemGreen
-                } else if percentage < 0.9 {
-                    color = .systemOrange
-                } else {
-                    color = .systemRed
-                }
-            }
-            
-            attributedString.addAttribute(.foregroundColor, value: color, range: NSRange(location: 0, length: attributedString.length))
+            // Use theme-adaptive colors (black/white) instead of colored indicators
+            let themeColor = NSColor.controlTextColor  // Auto-adapts to light/dark theme
+            attributedString.addAttribute(.foregroundColor, value: themeColor, range: NSRange(location: 0, length: attributedString.length))
             
             button.attributedTitle = attributedString
         } else {
