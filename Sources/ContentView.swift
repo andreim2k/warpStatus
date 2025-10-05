@@ -18,8 +18,8 @@ struct ContentView: View {
             // Action buttons
             actionSection
         }
-        .padding(24)
-        .frame(width: 360, height: 420)
+        .padding(20)
+        .frame(width: 360, height: 460)
         .background(
             ZStack {
                 // Animated background gradient
@@ -116,11 +116,17 @@ struct ContentView: View {
     }
     
     private var actionSection: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             Divider()
                 .background(.white.opacity(0.2))
             
-            HStack(spacing: 12) {
+            if let lastUpdateTime = warpUsageService.lastUpdateTime {
+                Text("Last updated: \(lastUpdateTime, formatter: timeFormatter)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            HStack(spacing: 16) {
                 Button("Refresh") {
                     warpUsageService.loadUsageData(force: true)
                 }
@@ -133,12 +139,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(LiquidGlassButtonStyle(color: .red))
             }
-            
-            if let lastUpdateTime = warpUsageService.lastUpdateTime {
-                Text("Last updated: \(lastUpdateTime, formatter: timeFormatter)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            .padding(.bottom, 8)
         }
     }
     
@@ -164,7 +165,7 @@ struct ContentView: View {
                     .frame(width: CGFloat.random(in: 3...6))
                     .position(
                         x: CGFloat.random(in: 0...360),
-                        y: CGFloat.random(in: 0...420)
+                        y: CGFloat.random(in: 0...460)
                     )
                     .animation(
                         .linear(duration: Double.random(in: 4...8))
