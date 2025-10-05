@@ -36,7 +36,7 @@ class MenuBarController: NSObject, ObservableObject {
     private func setupTimer() {
         // Refresh every second for real-time updates
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.warpUsageService.loadUsageData()
+            self?.warpUsageService.loadUsageData(force: true)
         }
     }
     

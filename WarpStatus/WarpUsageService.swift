@@ -16,7 +16,12 @@ struct WarpUsageData {
         if isUnlimited {
             return "∞/∞ (Unlimited)"
         } else {
-            return "\(requestsUsed)/\(requestsLimit)"
+            let formatter = NumberFormatter()
+            formatter.groupingSeparator = ""
+            formatter.numberStyle = .none
+            let usedStr = formatter.string(from: NSNumber(value: requestsUsed)) ?? "\(requestsUsed)"
+            let limitStr = formatter.string(from: NSNumber(value: requestsLimit)) ?? "\(requestsLimit)"
+            return "\(usedStr)/\(limitStr)"
         }
     }
     
