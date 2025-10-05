@@ -87,9 +87,16 @@ class MenuBarController: NSObject, ObservableObject {
     @objc private func statusBarButtonClicked() {
         // Force refresh to ensure menu shows latest data
         warpUsageService.loadUsageData(force: true)
+
+        // Create and show menu
         let menu = createMenu()
         statusBarItem.menu = menu
         statusBarItem.button?.performClick(nil)
+
+        // Clear menu after it's dismissed to allow normal clicking behavior
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.statusBarItem.menu = nil
+        }
     }
     
     private func createMenu() -> NSMenu {
@@ -101,7 +108,19 @@ class MenuBarController: NSObject, ObservableObject {
             usageItem.title = "Usage: \(data.displayText)"
             usageItem.isEnabled = false
             menu.addItem(usageItem)
-            
+
+            // Total tokens (limit)
+            if !data.isUnlimited {
+                let formatter = NumberFormatter()
+                formatter.groupingSeparator = ""
+                formatter.numberStyle = .none
+                let limitStr = formatter.string(from: NSNumber(value: data.requestsLimit)) ?? "\(data.requestsLimit)"
+                let totalItem = NSMenuItem()
+                totalItem.title = "Total tokens: \(limitStr)"
+                totalItem.isEnabled = false
+                menu.addItem(totalItem)
+            }
+
             // Subscription type
             let subscriptionItem = NSMenuItem()
             subscriptionItem.title = "Plan: \(data.subscriptionDisplayName)"
