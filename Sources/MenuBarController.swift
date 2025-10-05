@@ -8,12 +8,14 @@ class MenuBarController: NSObject, ObservableObject {
     private let warpUsageService = WarpUsageService()
     private var cancellables = Set<AnyCancellable>()
     private var eventMonitor: Any?
+    private var timer: Timer?
 
     override init() {
         super.init()
 
         setupPopover()
         setupMenuBar()
+        setupTimer()
 
         // Listen for usage data updates
         warpUsageService.$usageData
@@ -23,11 +25,12 @@ class MenuBarController: NSObject, ObservableObject {
         }
         .store(in: &cancellables)
     }
-    
+
     deinit {
         if let eventMonitor = eventMonitor {
             NSEvent.removeMonitor(eventMonitor)
         }
+        timer?.invalidate()
     }
 
     private func setupPopover() {
@@ -51,14 +54,21 @@ class MenuBarController: NSObject, ObservableObject {
     
     private func setupMenuBar() {
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
+
         if let button = statusBarItem.button {
             button.title = "Loading..."
             button.action = #selector(togglePopover)
             button.target = self
         }
     }
-    
+
+    private func setupTimer() {
+        // Refresh every second for real-time updates
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.warpUsageService.loadUsageData(force: true)
+        }
+    }
+
     private func updateStatusBarButton(with data: WarpUsageData?) {
         guard let button = statusBarItem.button else { return }
         

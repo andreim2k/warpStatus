@@ -16,25 +16,25 @@ struct WarpUsageData {
         if isUnlimited {
             return "∞"
         } else {
-            return "\(requestsUsed.formatted(.number)) of \(requestsLimit.formatted(.number))"
+            return "\(requestsUsed) of \(requestsLimit)"
         }
     }
-    
+
     var freeTokensText: String {
         if isUnlimited {
             return "Unlimited"
         } else {
             let freeTokens = requestsLimit - requestsUsed
-            return "\(freeTokens.formatted(.number)) remaining"
+            return "\(freeTokens) remaining"
         }
     }
-    
+
     var menuBarText: String {
         if isUnlimited {
             return "∞"
         } else {
             let freeTokens = requestsLimit - requestsUsed
-            return "\(freeTokens.formatted(.number))"
+            return "\(freeTokens)"
         }
     }
     

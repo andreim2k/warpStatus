@@ -254,16 +254,29 @@ struct LiquidGlassUsageCard: View {
             
             VStack(spacing: 8) {
                 HStack {
-                    Text("Total Used:")
+                    Text("Used:")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text(data.displayText)
+                    Text("\(data.requestsUsed)")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(.cyan)
                         .contentTransition(.numericText())
                 }
-                
+
+                if !data.isUnlimited {
+                    HStack {
+                        Text("Total Tokens:")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(data.requestsLimit)")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(.blue)
+                            .contentTransition(.numericText())
+                    }
+                }
+
                 HStack {
                     Text("Remaining:")
                         .font(.system(size: 14, weight: .medium))
