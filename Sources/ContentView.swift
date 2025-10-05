@@ -8,7 +8,7 @@ struct ContentView: View {
     @State private var particleAnimation = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 24) {
             // Header with animated gradient
             headerSection
             
@@ -18,7 +18,9 @@ struct ContentView: View {
             // Action buttons
             actionSection
         }
-        .padding(28)
+        .padding(.horizontal, 28)
+        .padding(.top, 36)
+        .padding(.bottom, 28)
         .frame(width: 360, height: 520)
         .background(
             ZStack {
@@ -93,8 +95,7 @@ struct ContentView: View {
                 }
             }
             
-            Divider()
-                .background(.white.opacity(0.2))
+            // Removed divider for cleaner look
         }
     }
 
@@ -117,8 +118,7 @@ struct ContentView: View {
     
     private var actionSection: some View {
         VStack(spacing: 12) {
-            Divider()
-                .background(.white.opacity(0.2))
+            // Removed divider for cleaner look
             
             if let lastUpdateTime = warpUsageService.lastUpdateTime {
                 Text("Last updated: \(lastUpdateTime, formatter: timeFormatter)")
