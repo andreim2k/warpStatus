@@ -14,9 +14,10 @@ struct WarpUsageData {
     
     var displayText: String {
         if isUnlimited {
-            return "∞/∞"
+            return "∞"
         } else {
-            return "\(requestsUsed)/\(requestsLimit)"
+            let freeTokens = requestsLimit - requestsUsed
+            return "\(freeTokens)"
         }
     }
     
