@@ -7,6 +7,7 @@ class MenuBarController: NSObject, ObservableObject {
     private var popover: NSPopover!
     private let warpUsageService = WarpUsageService()
     private var cancellables = Set<AnyCancellable>()
+    private var eventMonitor: Any?
 
     override init() {
         super.init()
@@ -22,6 +23,12 @@ class MenuBarController: NSObject, ObservableObject {
         }
         .store(in: &cancellables)
     }
+    
+    deinit {
+        if let eventMonitor = eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+    }
 
     private func setupPopover() {
         let contentView = ContentView(warpUsageService: warpUsageService, onQuit: {
@@ -29,9 +36,17 @@ class MenuBarController: NSObject, ObservableObject {
         })
 
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 240)
+        popover.contentSize = NSSize(width: 360, height: 420)
         popover.behavior = .transient
+        popover.animates = true
         popover.contentViewController = NSHostingController(rootView: contentView)
+        
+        // Add event monitor to close popover when clicking outside
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            if self?.popover.isShown == true {
+                self?.popover.performClose(nil)
+            }
+        }
     }
     
     private func setupMenuBar() {
@@ -83,7 +98,11 @@ class MenuBarController: NSObject, ObservableObject {
             if let button = statusBarItem.button {
                 warpUsageService.loadUsageData(force: true)
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                popover.contentViewController?.view.window?.becomeKey()
+                
+                // Ensure the popover becomes key and visible
+                DispatchQueue.main.async {
+                    self.popover.contentViewController?.view.window?.makeKey()
+                }
             }
         }
     }
