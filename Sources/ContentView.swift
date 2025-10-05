@@ -48,11 +48,21 @@ struct ContentView: View {
                     .fontWeight(.semibold)
             }
             
-            HStack {
-                Text("Usage:")
-                Spacer()
-                Text(data.displayText)
-                    .fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Total Used:")
+                    Spacer()
+                    Text(data.displayText)
+                        .fontWeight(.semibold)
+                }
+                
+                HStack {
+                    Text("Remaining:")
+                    Spacer()
+                    Text(data.freeTokensText)
+                        .fontWeight(.semibold)
+                        .foregroundColor(data.isUnlimited ? .green : colorForPercentage(data.usagePercentage))
+                }
             }
             
             if !data.isUnlimited {

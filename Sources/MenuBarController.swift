@@ -60,7 +60,7 @@ class MenuBarController: NSObject, ObservableObject {
             }
             
             let attributedString = NSMutableAttributedString(attachment: attachment)
-            attributedString.append(NSAttributedString(string: " \(data.displayText)"))
+            attributedString.append(NSAttributedString(string: " \(data.menuBarText)"))
             
             // Apply SF Mono font - same as SystemMonitor
             let monoFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
