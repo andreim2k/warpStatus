@@ -18,8 +18,8 @@ struct ContentView: View {
             // Action buttons
             actionSection
         }
-        .padding(20)
-        .frame(width: 360, height: 460)
+        .padding(28)
+        .frame(width: 360, height: 520)
         .background(
             ZStack {
                 // Animated background gradient
@@ -99,7 +99,7 @@ struct ContentView: View {
     }
 
     private var contentSection: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             if let data = warpUsageService.usageData {
                 LiquidGlassPlanCard(data: data)
                 LiquidGlassUsageCard(data: data)
@@ -139,8 +139,9 @@ struct ContentView: View {
                 }
                 .buttonStyle(LiquidGlassButtonStyle(color: .red))
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, 16)
         }
+        .padding(.top, 8)
     }
     
     private var backgroundGradient: some View {
@@ -165,7 +166,7 @@ struct ContentView: View {
                     .frame(width: CGFloat.random(in: 3...6))
                     .position(
                         x: CGFloat.random(in: 0...360),
-                        y: CGFloat.random(in: 0...460)
+                        y: CGFloat.random(in: 0...520)
                     )
                     .animation(
                         .linear(duration: Double.random(in: 4...8))
