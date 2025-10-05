@@ -8,20 +8,20 @@ struct ContentView: View {
     @State private var particleAnimation = false
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             // Header with animated gradient
             headerSection
-            
+
             // Main content with glass cards
             contentSection
-            
+
             // Action buttons
             actionSection
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 36)
-        .padding(.bottom, 28)
-        .frame(width: 360, height: 520)
+        .padding(.horizontal, 24)
+        .padding(.top, 28)
+        .padding(.bottom, 24)
+        .frame(width: 360, height: 580)
         .background(
             ZStack {
                 // Animated background gradient
@@ -100,7 +100,7 @@ struct ContentView: View {
     }
 
     private var contentSection: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             if let data = warpUsageService.usageData {
                 LiquidGlassPlanCard(data: data)
                 LiquidGlassUsageCard(data: data)
