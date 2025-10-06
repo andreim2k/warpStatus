@@ -6,7 +6,8 @@
       "Bash(./build_app.sh:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Read(//Users/andrei/Hobby/**)"
     ],
     "deny": [],
     "ask": []

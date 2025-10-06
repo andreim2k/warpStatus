@@ -22,5 +22,10 @@ let package = Package(
                 .process("Resources")
             ]
         ),
+        .testTarget(
+            name: "WarpStatusTests",
+            dependencies: ["WarpStatus"],
+            path: "Tests/WarpStatusTests"
+        ),
     ]
 )
