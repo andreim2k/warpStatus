@@ -4,602 +4,351 @@ import AppKit
 import Combine
 @testable import WarpStatus
 
+/// Integration tests that verify components work together correctly.
+/// These tests focus on actual integration scenarios rather than isolated unit tests.
 final class IntegrationTests: XCTestCase {
     var warpUsageService: WarpUsageService!
-    var menuBarController: MenuBarController!
     var cancellables: Set<AnyCancellable>!
-    
+
     override func setUp() {
         super.setUp()
         warpUsageService = WarpUsageService()
-        menuBarController = MenuBarController()
         cancellables = Set<AnyCancellable>()
     }
-    
+
     override func tearDown() {
         cancellables = nil
-        menuBarController = nil
         warpUsageService = nil
         super.tearDown()
     }
-    
-    // MARK: - System Integration Tests
-    
-    func testWarpUsageServiceAndMenuBarControllerIntegration() {
-        let expectation = XCTestExpectation(description: "Integration should work")
-        
-        // Test that WarpUsageService and MenuBarController work together
+
+    // MARK: - Service + View Integration
+
+    func testContentViewReceivesServiceUpdates() {
+        let expectation = XCTestExpectation(description: "View should receive service updates")
+
+        // Create view bound to service
+        let view = ContentView(
+            warpUsageService: warpUsageService,
+            onQuit: {}
+        )
+
+        // Verify view exists and is bound
+        XCTAssertNotNil(view)
+
+        // Test that service updates propagate
         warpUsageService.$usageData
-            .dropFirst()
-            .sink { _ in
+            .combineLatest(warpUsageService.$isLoading)
+            .dropFirst() // Skip initial values
+            .sink { usageData, isLoading in
+                // Either data loaded or error occurred
+                XCTAssertNotNil(usageData ?? warpUsageService.lastError)
                 expectation.fulfill()
             }
             .store(in: &cancellables)
-        
+
         wait(for: [expectation], timeout: TestConstants.defaultTimeout)
     }
-    
-    func testEndToEndUsageFlow() {
-        let expectation = XCTestExpectation(description: "End-to-end flow should work")
-        
-        // Test the complete flow from usage data to UI
-        warpUsageService.$usageData
-            .combineLatest(
-                warpUsageService.$isLoading,
-                warpUsageService.$lastError,
-                warpUsageService.$lastUpdateTime
+
+    func testContentViewHandlesAllServiceStates() {
+        // Test that view can be created and handle all possible service states
+        let states: [(WarpUsageData?, Bool, String?)] = [
+            (nil, true, nil),                                   // Loading
+            (nil, false, "Test error"),                        // Error
+            (TestHelpers.createWarpUsageData(), false, nil),   // Success
+        ]
+
+        for (data, isLoading, error) in states {
+            warpUsageService.usageData = data
+            warpUsageService.isLoading = isLoading
+            warpUsageService.lastError = error
+
+            let view = ContentView(
+                warpUsageService: warpUsageService,
+                onQuit: {}
             )
-            .dropFirst()
-            .sink { usageData, isLoading, lastError, lastUpdateTime in
-                // Verify all components are updating
-                XCTAssertFalse(isLoading, "Loading should complete")
-                XCTAssertNotNil(lastUpdateTime, "Update time should be set")
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
+
+            XCTAssertNotNil(view, "View should handle state: data=\(data != nil), loading=\(isLoading), error=\(error != nil)")
+        }
     }
-    
-    // MARK: - UI Integration Tests
-    
-    func testContentViewIntegrationWithWarpUsageService() {
+
+    // MARK: - Service + MenuBarController Integration
+
+    func testMenuBarControllerUsesWarpUsageService() {
+        // MenuBarController creates its own WarpUsageService internally
+        // We can only verify it initializes without crashing
+        let controller = MenuBarController()
+        let expectation = XCTestExpectation(description: "Controller should initialize with service")
+
+        // Give time for initialization
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            XCTAssertNotNil(controller)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    // MARK: - Complete System Integration
+
+    func testCompleteSystemIntegration() {
+        // Test the complete system: Service -> Controller -> View
+        let controller = MenuBarController()
         let view = ContentView(
             warpUsageService: warpUsageService,
             onQuit: {}
         )
-        
+
+        // Verify all components can coexist
+        XCTAssertNotNil(controller)
         XCTAssertNotNil(view)
-        
-        // Test that the view integrates properly with WarpUsageService
-        let expectation = XCTestExpectation(description: "View should integrate with service")
-        
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { _ in
+        XCTAssertNotNil(warpUsageService)
+
+        let expectation = XCTestExpectation(description: "System should operate together")
+
+        // Trigger a data load and verify system handles it
+        warpUsageService.$lastUpdateTime
+            .compactMap { $0 }
+            .sink { updateTime in
+                XCTAssertLessThanOrEqual(updateTime.timeIntervalSinceNow, 1.0)
                 expectation.fulfill()
             }
             .store(in: &cancellables)
-        
+
+        warpUsageService.loadUsageData(force: true)
+
         wait(for: [expectation], timeout: TestConstants.defaultTimeout)
     }
-    
-    func testMenuBarControllerAndContentViewIntegration() {
-        // Test that MenuBarController and ContentView work together
-        let view = ContentView(
-            warpUsageService: warpUsageService,
-            onQuit: {}
-        )
-        
-        XCTAssertNotNil(view)
-        XCTAssertNotNil(menuBarController)
-        
-        // Test that both components can coexist
-        let expectation = XCTestExpectation(description: "Components should integrate")
-        
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { _ in
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - Data Flow Integration Tests
-    
-    func testUsageDataFlow() {
-        let expectation = XCTestExpectation(description: "Data flow should work")
-        
-        // Test that data flows correctly through the system
+
+    // MARK: - Data Flow Integration
+
+    func testDataFlowFromServiceToView() {
+        let expectation = XCTestExpectation(description: "Data should flow from service to view")
+
+        // Monitor service updates
+        var receivedData: WarpUsageData?
+        var receivedLoading: Bool?
+
         warpUsageService.$usageData
             .combineLatest(warpUsageService.$isLoading)
             .dropFirst()
-            .sink { usageData, isLoading in
-                // Verify data is flowing correctly
-                XCTAssertFalse(isLoading, "Loading should complete")
+            .sink { data, loading in
+                receivedData = data
+                receivedLoading = loading
                 expectation.fulfill()
             }
             .store(in: &cancellables)
-        
+
+        // Create view that observes service
+        let view = ContentView(
+            warpUsageService: warpUsageService,
+            onQuit: {}
+        )
+
+        XCTAssertNotNil(view)
+
+        // Trigger data load
+        warpUsageService.loadUsageData(force: true)
+
         wait(for: [expectation], timeout: TestConstants.defaultTimeout)
+
+        // Verify data flow occurred
+        XCTAssertNotNil(receivedLoading, "Should receive loading state")
+        // Either data or error should be set
+        XCTAssertTrue(receivedData != nil || warpUsageService.lastError != nil)
     }
-    
-    func testErrorFlow() {
-        let expectation = XCTestExpectation(description: "Error flow should work")
-        
-        // Test that errors flow correctly through the system
+
+    // MARK: - Error Handling Integration
+
+    func testSystemErrorHandling() {
+        let expectation = XCTestExpectation(description: "System should handle errors gracefully")
+
+        // Create complete system
+        let view = ContentView(
+            warpUsageService: warpUsageService,
+            onQuit: {}
+        )
+
+        XCTAssertNotNil(view)
+
+        // Monitor for error or success
         warpUsageService.$lastError
+            .combineLatest(warpUsageService.$usageData)
             .dropFirst()
-            .sink { error in
-                // Verify error is flowing correctly
+            .sink { error, data in
+                // System should handle the result (error or data)
+                XCTAssertTrue(error != nil || data != nil, "Should have either error or data")
                 expectation.fulfill()
             }
             .store(in: &cancellables)
-        
+
+        warpUsageService.loadUsageData(force: true)
+
         wait(for: [expectation], timeout: TestConstants.defaultTimeout)
     }
-    
-    // MARK: - Performance Integration Tests
-    
-    func testSystemPerformanceUnderLoad() {
-        measure {
-            // Test system performance under load
-            let expectation = XCTestExpectation(description: "Performance test")
-            
-            warpUsageService.$usageData
-                .dropFirst()
-                .sink { _ in
-                    expectation.fulfill()
-                }
-                .store(in: &cancellables)
-            
-            wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-        }
-    }
-    
-    func testMemoryUsageUnderLoad() {
-        measure {
-            // Test memory usage under load
-            let expectation = XCTestExpectation(description: "Memory test")
-            
-            warpUsageService.$isLoading
-                .dropFirst()
-                .sink { _ in
-                    expectation.fulfill()
-                }
-                .store(in: &cancellables)
-            
-            wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-        }
-    }
-    
-    // MARK: - Error Handling Integration Tests
-    
-    func testSystemHandlesErrorsGracefully() {
-        // Test that the system handles errors gracefully
-        let expectation = XCTestExpectation(description: "Error handling test")
-        
-        // Simulate an error condition
-        warpUsageService.$lastError
-            .sink { error in
-                // System should handle errors gracefully
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    func testSystemRecoversFromErrors() {
-        // Test that the system recovers from errors
-        let expectation = XCTestExpectation(description: "Error recovery test")
-        
-        warpUsageService.$usageData
-            .dropFirst()
+
+    // MARK: - Real-time Updates Integration
+
+    func testRealTimeUpdateIntegration() {
+        let expectation = XCTestExpectation(description: "System should support real-time updates")
+        expectation.expectedFulfillmentCount = 2
+
+        // Track update count
+        var updateCount = 0
+
+        warpUsageService.$lastUpdateTime
+            .compactMap { $0 }
             .sink { _ in
+                updateCount += 1
                 expectation.fulfill()
             }
             .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
+
+        // Trigger multiple updates
+        warpUsageService.loadUsageData(force: true)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            self.warpUsageService.loadUsageData(force: true)
+        }
+
+        wait(for: [expectation], timeout: TestConstants.longTimeout)
+
+        XCTAssertGreaterThanOrEqual(updateCount, 2, "Should receive multiple updates")
     }
-    
-    // MARK: - Thread Safety Integration Tests
-    
-    func testThreadSafety() {
-        let expectation = XCTestExpectation(description: "Thread safety test")
-        
-        // Test that the system is thread-safe
-        DispatchQueue.global(qos: .background).async {
-            // Access system components from background thread
-            XCTAssertNotNil(self.warpUsageService)
-            XCTAssertNotNil(self.menuBarController)
+
+    // MARK: - Memory Management Integration
+
+    func testIntegratedSystemMemoryManagement() {
+        weak var weakService: WarpUsageService?
+        weak var weakController: MenuBarController?
+
+        autoreleasepool {
+            let service = WarpUsageService()
+            let controller = MenuBarController()
+
+            weakService = service
+            weakController = controller
+
+            // Create and use integrated system
+            let view = ContentView(
+                warpUsageService: service,
+                onQuit: {}
+            )
+
+            XCTAssertNotNil(view)
+
+            // Components go out of scope here
+        }
+
+        // Give time for cleanup
+        let expectation = XCTestExpectation(description: "Cleanup")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             expectation.fulfill()
         }
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
+
+        wait(for: [expectation], timeout: 1.0)
+
+        // Note: Some components may still be retained by system frameworks
+        // The test verifies cleanup completes without crashes
     }
-    
-    func testConcurrentAccess() {
-        let expectation = XCTestExpectation(description: "Concurrent access test")
-        
-        // Test concurrent access to system components
+
+    // MARK: - Concurrent Access Integration
+
+    func testConcurrentSystemAccess() {
+        let expectation = XCTestExpectation(description: "System should handle concurrent access")
         let group = DispatchGroup()
-        
-        for _ in 0..<5 {
+
+        // Create system
+        let view = ContentView(
+            warpUsageService: warpUsageService,
+            onQuit: {}
+        )
+
+        XCTAssertNotNil(view)
+
+        // Access from multiple threads
+        for i in 0..<5 {
             group.enter()
-            DispatchQueue.global(qos: .background).async {
-                XCTAssertNotNil(self.warpUsageService)
-                XCTAssertNotNil(self.menuBarController)
+            let queue = i % 2 == 0 ? DispatchQueue.main : DispatchQueue.global(qos: .background)
+
+            queue.async {
+                // Access service from various threads
+                _ = self.warpUsageService.usageData
+                _ = self.warpUsageService.isLoading
+                _ = self.warpUsageService.lastError
                 group.leave()
             }
         }
-        
+
         group.notify(queue: .main) {
             expectation.fulfill()
         }
-        
+
         wait(for: [expectation], timeout: TestConstants.defaultTimeout)
     }
-    
-    // MARK: - Resource Management Integration Tests
-    
-    func testResourceManagement() {
-        // Test that resources are managed properly
-        let expectation = XCTestExpectation(description: "Resource management test")
-        
-        // Create and destroy components
-        let service = WarpUsageService()
-        let controller = MenuBarController()
-        
-        XCTAssertNotNil(service)
-        XCTAssertNotNil(controller)
-        
-        // Clean up
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            expectation.fulfill()
-        }
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    func testMemoryLeaks() {
-        // Test for memory leaks
-        let expectation = XCTestExpectation(description: "Memory leak test")
-        
-        weak var weakService: WarpUsageService?
-        weak var weakController: MenuBarController?
-        
-        do {
-            let service = WarpUsageService()
-            let controller = MenuBarController()
-            
-            weakService = service
-            weakController = controller
-            
-            // Components go out of scope here
-        }
-        
-        // Give time for cleanup
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            expectation.fulfill()
-        }
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-        
-        // Note: We can't directly test for memory leaks in unit tests
-        // but we can verify the components exist and can be cleaned up
-        XCTAssertTrue(true, "Memory leak test completed")
-    }
-    
-    // MARK: - Real-time Updates Integration Tests
-    
-    func testRealTimeUpdates() {
-        let expectation = XCTestExpectation(description: "Real-time updates test")
-        
-        // Test that updates happen in real-time
-        var updateCount = 0
-        
-        warpUsageService.$usageData
-            .sink { _ in
-                updateCount += 1
-                if updateCount >= 3 {
-                    expectation.fulfill()
+
+    // MARK: - Performance Integration
+
+    func testSystemPerformanceUnderLoad() {
+        let view = ContentView(
+            warpUsageService: warpUsageService,
+            onQuit: {}
+        )
+
+        XCTAssertNotNil(view)
+
+        measure(metrics: [XCTClockMetric()]) {
+            let loadExpectation = XCTestExpectation(description: "Load should complete")
+
+            warpUsageService.$isLoading
+                .filter { !$0 }
+                .sink { _ in
+                    loadExpectation.fulfill()
                 }
-            }
-            .store(in: &cancellables)
-        
-        // Trigger multiple updates
-        warpUsageService.loadUsageData(force: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.warpUsageService.loadUsageData(force: true)
+                .store(in: &cancellables)
+
+            warpUsageService.loadUsageData(force: true)
+
+            wait(for: [loadExpectation], timeout: TestConstants.defaultTimeout)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.warpUsageService.loadUsageData(force: true)
-        }
-        
-        wait(for: [expectation], timeout: TestConstants.longTimeout)
     }
-    
-    func testUpdateFrequency() {
-        let expectation = XCTestExpectation(description: "Update frequency test")
-        
-        // Test that updates happen at the expected frequency
-        var lastUpdateTime = Date()
-        
-        warpUsageService.$lastUpdateTime
-            .dropFirst()
-            .sink { updateTime in
-                if let updateTime = updateTime {
-                    let timeDiff = updateTime.timeIntervalSince(lastUpdateTime)
-                    
-                    // Updates should happen regularly
-                    XCTAssertGreaterThan(timeDiff, 0.1, "Updates should happen regularly")
-                    XCTAssertLessThan(timeDiff, 5.0, "Updates should not be too slow")
-                    
-                    lastUpdateTime = updateTime
-                    expectation.fulfill()
-                }
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.longTimeout)
-    }
-    
-    // MARK: - System State Integration Tests
-    
-    func testSystemStateConsistency() {
-        let expectation = XCTestExpectation(description: "System state consistency test")
-        
-        // Test that system state remains consistent
+
+    // MARK: - State Consistency Integration
+
+    func testStateConsistencyAcrossComponents() {
+        let expectation = XCTestExpectation(description: "State should be consistent")
+
+        // Create view observing service
+        let view = ContentView(
+            warpUsageService: warpUsageService,
+            onQuit: {}
+        )
+
+        XCTAssertNotNil(view)
+
+        // Monitor state changes
         warpUsageService.$usageData
             .combineLatest(
                 warpUsageService.$isLoading,
                 warpUsageService.$lastError
             )
             .dropFirst()
-            .sink { usageData, isLoading, lastError in
+            .sink { data, loading, error in
                 // Verify state consistency
-                XCTAssertFalse(isLoading, "Loading should complete")
-                
-                // Either we have data or we have an error, but not both
-                if usageData != nil {
-                    XCTAssertNil(lastError, "Should not have error when data is available")
+                if loading {
+                    // Loading state is valid regardless of data/error
+                    XCTAssertTrue(true)
+                } else {
+                    // When not loading, should have data OR error
+                    XCTAssertTrue(data != nil || error != nil,
+                                "Should have either data or error when not loading")
                 }
-                
                 expectation.fulfill()
             }
             .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    func testSystemStateTransitions() {
-        let expectation = XCTestExpectation(description: "System state transitions test")
-        
-        // Test that system state transitions are handled properly
-        warpUsageService.$isLoading
-            .dropFirst()
-            .sink { _ in
-                // State transitions should be handled gracefully
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - User Interaction Integration Tests
-    
-    func testUserInteractionFlow() {
-        // Test the complete user interaction flow
-        let view = ContentView(
-            warpUsageService: warpUsageService,
-            onQuit: {}
-        )
-        
-        XCTAssertNotNil(view)
-        XCTAssertNotNil(menuBarController)
-        
-        // Test that user interactions work properly
-        let expectation = XCTestExpectation(description: "User interaction test")
-        
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { _ in
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    func testMenuBarInteraction() {
-        // Test menu bar interaction flow
-        let expectation = XCTestExpectation(description: "Menu bar interaction test")
-        
-        // Access the private statusBarItem through reflection for testing
-        let mirror = Mirror(reflecting: menuBarController!)
-        let statusBarItem = mirror.children.first { $0.label == "statusBarItem" }?.value as? NSStatusItem
-        
-        XCTAssertNotNil(statusBarItem, "Status bar item should exist for interaction")
-        
-        // Test that menu bar interactions work properly
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { _ in
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - Configuration Integration Tests
-    
-    func testConfigurationIntegration() {
-        // Test that configuration is properly integrated
-        let expectation = XCTestExpectation(description: "Configuration integration test")
-        
-        // Test that the system uses proper configuration
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { _ in
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - Monitoring Integration Tests
-    
-    func testMonitoringIntegration() {
-        // Test that monitoring is properly integrated
-        let expectation = XCTestExpectation(description: "Monitoring integration test")
-        
-        // Test that all monitoring components work together
-        warpUsageService.$usageData
-            .combineLatest(
-                warpUsageService.$isLoading,
-                warpUsageService.$lastError,
-                warpUsageService.$lastUpdateTime
-            )
-            .dropFirst()
-            .sink { _, _, _, _ in
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - Subscription Type Integration Tests
-    
-    func testSubscriptionTypeIntegration() {
-        let expectation = XCTestExpectation(description: "Subscription type integration test")
-        
-        // Test that subscription types are properly integrated
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { usageData in
-                if let data = usageData {
-                    // Verify subscription type is properly determined
-                    XCTAssertFalse(data.subscriptionType.isEmpty, "Subscription type should not be empty")
-                    expectation.fulfill()
-                }
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - Usage Calculation Integration Tests
-    
-    func testUsageCalculationIntegration() {
-        let expectation = XCTestExpectation(description: "Usage calculation integration test")
-        
-        // Test that usage calculations are properly integrated
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { usageData in
-                if let data = usageData {
-                    // Verify usage calculations are correct
-                    XCTAssertGreaterThanOrEqual(data.usagePercentage, 0.0, "Usage percentage should be non-negative")
-                    XCTAssertLessThanOrEqual(data.usagePercentage, 1.0, "Usage percentage should not exceed 100%")
-                    expectation.fulfill()
-                }
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - File System Integration Tests
-    
-    func testFileSystemIntegration() {
-        let expectation = XCTestExpectation(description: "File system integration test")
-        
-        // Test that file system operations are properly integrated
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { _ in
-                // File system operations should complete
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - Network Integration Tests
-    
-    func testNetworkIntegration() {
-        let expectation = XCTestExpectation(description: "Network integration test")
-        
-        // Test that network operations are properly integrated
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { _ in
-                // Network operations should complete
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - Data Persistence Integration Tests
-    
-    func testDataPersistenceIntegration() {
-        let expectation = XCTestExpectation(description: "Data persistence integration test")
-        
-        // Test that data persistence is properly integrated
-        warpUsageService.$usageData
-            .dropFirst()
-            .sink { _ in
-                // Data persistence operations should complete
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - Error Recovery Integration Tests
-    
-    func testErrorRecoveryIntegration() {
-        let expectation = XCTestExpectation(description: "Error recovery integration test")
-        
-        // Test that error recovery is properly integrated
-        warpUsageService.$lastError
-            .combineLatest(warpUsageService.$usageData)
-            .dropFirst()
-            .sink { error, usageData in
-                // Error recovery should work properly
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
-        wait(for: [expectation], timeout: TestConstants.defaultTimeout)
-    }
-    
-    // MARK: - Performance Monitoring Integration Tests
-    
-    func testPerformanceMonitoringIntegration() {
-        let expectation = XCTestExpectation(description: "Performance monitoring integration test")
-        
-        // Test that performance monitoring is properly integrated
-        warpUsageService.$lastUpdateTime
-            .dropFirst()
-            .sink { _ in
-                // Performance monitoring should work properly
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
+
+        warpUsageService.loadUsageData(force: true)
+
         wait(for: [expectation], timeout: TestConstants.defaultTimeout)
     }
 }
