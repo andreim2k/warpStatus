@@ -34,7 +34,10 @@ struct WarpUsageData {
             return "∞"
         } else {
             let freeTokens = requestsLimit - requestsUsed
-            return "\(freeTokens)"
+            let truncatedText = freeTokens > 999 ? "\(freeTokens/1000)k" : "\(freeTokens)"
+            return truncatedText.count > AppConfiguration.maxMenuBarTextLength ? 
+                   "..." + String(truncatedText.suffix(AppConfiguration.maxMenuBarTextLength - 3)) : 
+                   truncatedText
         }
     }
     
@@ -51,6 +54,35 @@ struct WarpUsageData {
             return "Free Plan"
         }
     }
+    
+    var usageStatus: UsageStatus {
+        if isUnlimited { return .unlimited }
+        
+        let percentage = usagePercentage
+        if percentage >= AppConfiguration.notificationThresholds.criticalPercentage {
+            return .critical
+        } else if percentage >= AppConfiguration.notificationThresholds.warningPercentage {
+            return .warning
+        } else {
+            return .healthy
+        }
+    }
+}
+
+enum UsageStatus {
+    case healthy
+    case warning
+    case critical
+    case unlimited
+    
+    var color: String {
+        switch self {
+        case .healthy: return AppConfiguration.usageColors.healthy
+        case .warning: return AppConfiguration.usageColors.warning
+        case .critical: return AppConfiguration.usageColors.critical
+        case .unlimited: return AppConfiguration.usageColors.unlimited
+        }
+    }
 }
 
 class WarpUsageService: ObservableObject {
@@ -58,6 +90,7 @@ class WarpUsageService: ObservableObject {
     @Published var isLoading = false
     @Published var lastError: String?
     @Published var lastUpdateTime: Date?
+    @Published var retryCount = 0
     
     private var plistPath: String?
     private var fileMonitor: DispatchSourceFileSystemObject?
@@ -77,21 +110,49 @@ class WarpUsageService: ObservableObject {
     
     func loadUsageData(force: Bool = false) {
         isLoading = true
-        // Don't reset error immediately, so the UI can show it until loading is complete
+        retryCount = 0
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                let data = try self?.parseWarpPlist()
-                DispatchQueue.main.async {
-                    self?.isLoading = false
-                    self?.usageData = data
-                    self?.lastUpdateTime = Date()
-                    self?.lastError = nil // Clear error on success
+            self?.performDataLoadWithRetry(force: force)
+        }
+    }
+    
+    private func performDataLoadWithRetry(force: Bool, attempt: Int = 1) {
+        guard attempt <= AppConfiguration.retryAttempts else {
+            DispatchQueue.main.async { [weak self] in
+                self?.isLoading = false
+                self?.retryCount = 0
+                self?.lastError = "Failed to load data after \(AppConfiguration.retryAttempts) attempts. Please check your Warp installation."
+            }
+            return
+        }
+        
+        do {
+            // Use self directly - this is safe since we're in the method context
+            let data = try self.parseWarpPlist()
+            DispatchQueue.main.async { [weak self] in
+                self?.isLoading = false
+                self?.usageData = data
+                self?.lastUpdateTime = Date()
+                self?.lastError = nil
+                self?.retryCount = 0
+            }
+        } catch {
+            if attempt < AppConfiguration.retryAttempts {
+                // Exponential backoff: 1s, 2s, 4s...
+                let delay = AppConfiguration.retryDelay * Double(pow(2.0, Double(attempt - 1)))
+                DispatchQueue.main.async { [weak self] in
+                    self?.retryCount = attempt
                 }
-            } catch {
-                DispatchQueue.main.async {
+                
+                DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.performDataLoadWithRetry(force: force, attempt: attempt + 1)
+                }
+            } else {
+                DispatchQueue.main.async { [weak self] in
                     self?.isLoading = false
                     self?.lastError = error.localizedDescription
+                    self?.retryCount = 0
                 }
             }
         }
@@ -99,18 +160,9 @@ class WarpUsageService: ObservableObject {
     
     private func findWarpPlistPath() -> String? {
         let fileManager = FileManager.default
-        let preferencesDir = "\(NSHomeDirectory())/Library/Preferences/"
 
-        // Potential plist file names
-        let plistFileNames = [
-            "dev.warp.Warp-Stable.plist",
-            "dev.warp.Warp-Beta.plist",
-            "dev.warp.Warp-Nightly.plist",
-            "dev.warp.Warp.plist"
-        ]
-
-        for fileName in plistFileNames {
-            let fullPath = preferencesDir + fileName
+        for fileName in AppConfiguration.supportedPlistNames {
+            let fullPath = AppConfiguration.preferencesDirectory + fileName
             if fileManager.fileExists(atPath: fullPath) {
                 return fullPath
             }
@@ -127,22 +179,28 @@ class WarpUsageService: ObservableObject {
         let fileDescriptor = open(fileURL.path, O_EVTONLY)
 
         guard fileDescriptor != -1 else {
-            lastError = "Unable to monitor Warp preferences file for changes."
+            let errorCode = errno
+            lastError = "Unable to monitor Warp preferences file for changes (Error code: \(errorCode))."
             return
         }
 
-        fileMonitor = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fileDescriptor, eventMask: .write, queue: .main)
-
-        fileMonitor?.setEventHandler { [weak self] in
-            // When a write event is detected, reload the data
-            self?.loadUsageData(force: true)
-        }
-        
-        fileMonitor?.setCancelHandler {
+        do {
+            fileMonitor = try DispatchSource.makeFileSystemObjectSource(fileDescriptor: fileDescriptor, eventMask: .write, queue: .main)
+            
+            fileMonitor?.setEventHandler { [weak self] in
+                // When a write event is detected, reload the data
+                self?.loadUsageData(force: true)
+            }
+            
+            fileMonitor?.setCancelHandler {
+                close(fileDescriptor)
+            }
+            
+            fileMonitor?.resume()
+        } catch {
             close(fileDescriptor)
+            lastError = "Failed to create file monitor for Warp preferences: \(error.localizedDescription)"
         }
-        
-        fileMonitor?.resume()
     }
     
     private func parseWarpPlist() throws -> WarpUsageData {
