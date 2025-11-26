@@ -14,14 +14,17 @@ let package = Package(
     ],
     dependencies: [],
     targets: [
-        .executableTarget(
-            name: "WarpStatus",
-            dependencies: [],
-            path: "Sources",
-            resources: [
-                .process("Resources")
-            ]
-        ),
+    .executableTarget(
+        name: "WarpStatus",
+        dependencies: [],
+        path: "Sources",
+        resources: [
+            .process("Resources")
+        ],
+        linkerSettings: [
+            .linkedFramework("UserNotifications")
+        ]
+    ),
         .testTarget(
             name: "WarpStatusTests",
             dependencies: ["WarpStatus"],
