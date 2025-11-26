@@ -148,3 +148,4 @@ final class MenuBarControllerTests: XCTestCase {
         XCTAssertTrue(true, "This test serves as documentation")
     }
 }
+

@@ -309,3 +309,4 @@ This test suite provides **honest, realistic coverage** of testable components. 
 - Implement dependency injection
 
 The tests provide real value and catch real bugs, without pretending to test things that cannot be tested in unit tests.
+
